@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "../../services/supabase/client";
-import { popPostAuthRedirect } from "./redirect";
+import { popPostAuthRedirect, consumePasswordRecovery } from "./redirect";
 import "./auth.css";
 
 export default function AuthCallback() {
@@ -12,6 +12,12 @@ export default function AuthCallback() {
     let cancelled = false;
 
     async function finishAuth() {
+      const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+      const hashError = hash.get("error_description");
+      if (hashError) {
+        if (!cancelled) setError(hashError);
+        return;
+      }
       const url = new URL(window.location.href);
       const code = url.searchParams.get("code");
       const next = url.searchParams.get("next");
@@ -29,6 +35,13 @@ export default function AuthCallback() {
       }
 
       if (cancelled) return;
+
+      const isRecovery = consumePasswordRecovery();
+      if (isRecovery || next === "/auth/update-password") {
+        navigate("/auth/update-password", { replace: true });
+      } else {
+        navigate(popPostAuthRedirect(), { replace: true });
+      }
 
       if (next === "/auth/update-password") {
         navigate(next, { replace: true });

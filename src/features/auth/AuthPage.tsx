@@ -7,7 +7,11 @@ import {
 } from "react-router-dom";
 import { Eye, EyeOff } from "lucide-react";
 import { supabase } from "../../services/supabase/client";
-import { savePostAuthRedirect, popPostAuthRedirect } from "./redirect";
+import {
+  savePostAuthRedirect,
+  popPostAuthRedirect,
+  markPasswordRecovery,
+} from "./redirect";
 import "./auth.css";
 
 type Mode = "login" | "signup" | "forgot";
@@ -67,8 +71,9 @@ export default function AuthPage() {
         if (error) throw error;
         navigate(popPostAuthRedirect(), { replace: true });
       } else {
+        markPasswordRecovery();
         const { error } = await supabase.auth.resetPasswordForEmail(email, {
-          redirectTo: `${window.location.origin}/auth/callback?next=/auth/update-password`,
+          redirectTo,
         });
         if (error) throw error;
         setMessage("Password reset link sent. Check your email.");
