@@ -12,12 +12,14 @@ export default function AuthCallback() {
     let cancelled = false;
 
     async function finishAuth() {
+      // Supabase reports expired/invalid links in the URL hash
       const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
       const hashError = hash.get("error_description");
       if (hashError) {
         if (!cancelled) setError(hashError);
         return;
       }
+
       const url = new URL(window.location.href);
       const code = url.searchParams.get("code");
       const next = url.searchParams.get("next");
@@ -36,15 +38,8 @@ export default function AuthCallback() {
 
       if (cancelled) return;
 
-      const isRecovery = consumePasswordRecovery();
-      if (isRecovery || next === "/auth/update-password") {
+      if (consumePasswordRecovery() || next === "/auth/update-password") {
         navigate("/auth/update-password", { replace: true });
-      } else {
-        navigate(popPostAuthRedirect(), { replace: true });
-      }
-
-      if (next === "/auth/update-password") {
-        navigate(next, { replace: true });
       } else {
         navigate(popPostAuthRedirect(), { replace: true });
       }
