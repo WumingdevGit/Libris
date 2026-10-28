@@ -96,6 +96,8 @@
 
 .auth-form small { color: #777; }
 
+.auth-form-spaced { margin-top: 24px; }
+
 .auth-text-button {
   border: 0;
   padding: 0;

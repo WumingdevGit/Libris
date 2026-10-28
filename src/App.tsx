@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react'
-import { Link, NavLink, Route, Routes, useLocation } from 'react-router-dom'
+import { Link, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from './features/auth/AuthContext'
 import AuthPage from "./features/auth/AuthPage";
 import AuthCallback from "./features/auth/AuthCallback";
 import UpdatePasswordPage from "./features/auth/UpdatePasswordPage";
 import ProtectedRoute from './features/auth/ProtectedRoute'
+import { useSavedBooks } from './features/library/useSavedBooks'
 import {
   ArrowDownRight,
   ArrowRight,
@@ -136,9 +137,9 @@ function Header() {
             aria-label="Sign out"
             title={`Signed in as ${user.email}. Click to sign out.`}
           >
-          {(user.user_metadata?.full_name ?? user.email ?? '?').charAt(0).toUpperCase()}
+            {(user.user_metadata?.full_name ?? user.email ?? '?').charAt(0).toUpperCase()}
           </button>
-          ) : (
+        ) : (
           <Link to="/auth" className="avatar-button" aria-label="Sign in" title="Sign in">
             <User size={18} />
           </Link>
@@ -169,7 +170,7 @@ function BookCard({ book, saved, onToggleSave, compact = false }: { book: Book; 
     <article className={`book-card ${compact ? 'book-card-compact' : ''}`}>
       <div className={`book-cover-wrap cover-${book.tone}`}>
         <img className="book-cover" src={book.cover} alt={`Decorative cover image for ${book.title}`} loading="lazy" />
-        <button className={`save-book ${saved ? 'save-book-active' : ''}`} type="button" onClick={() => onToggleSave(book.id)} aria-label={saved ? `Remove ${book.title} from saved books` : `Save ${book.title}`} title={saved ? 'Saved to your sample shelf' : 'Save to your sample shelf'}>
+        <button className={`save-book ${saved ? 'save-book-active' : ''}`} type="button" onClick={() => onToggleSave(book.id)} aria-label={saved ? `Remove ${book.title} from saved books` : `Save ${book.title}`} title={saved ? 'Saved to your shelf' : 'Save to your shelf'}>
           {saved ? <Heart size={17} fill="currentColor" /> : <Bookmark size={17} />}
         </button>
         <span className="cover-caption">{book.genre}</span>
@@ -292,8 +293,8 @@ function LibraryPage({ savedIds, onToggleSave }: { savedIds: string[]; onToggleS
   const savedBooks = books.filter((book) => savedIds.includes(book.id))
   return (
     <main className="page-gutter discover-page library-page">
-      <div className="page-intro"><p className="eyebrow">YOUR PERSONAL CORNER</p><h1>My <em>shelf.</em></h1><p>Keep the books that caught your eye close by. In this first preview, saved books stay in this browser session; account-based syncing comes later.</p></div>
-      {savedBooks.length ? <><div className="results-line"><span>{savedBooks.length} saved {savedBooks.length === 1 ? 'book' : 'books'}</span><span>Preview shelf</span></div><div className="book-grid discover-grid">{savedBooks.map((book) => <BookCard key={book.id} book={book} saved onToggleSave={onToggleSave} />)}</div></> : <div className="empty-state"><Bookmark size={25} /><h2>Your shelf is waiting</h2><p>Save a book that catches your attention and it'll appear here.</p><Link className="button-primary" to="/discover">Find your first book <ArrowRight size={16} /></Link></div>}
+      <div className="page-intro"><p className="eyebrow">YOUR PERSONAL CORNER</p><h1>My <em>shelf.</em></h1><p>Keep the books that caught your eye close by. Your saved books are stored with your account.</p></div>
+      {savedBooks.length ? <><div className="results-line"><span>{savedBooks.length} saved {savedBooks.length === 1 ? 'book' : 'books'}</span><span>Your shelf</span></div><div className="book-grid discover-grid">{savedBooks.map((book) => <BookCard key={book.id} book={book} saved onToggleSave={onToggleSave} />)}</div></> : <div className="empty-state"><Bookmark size={25} /><h2>Your shelf is waiting</h2><p>Save a book that catches your attention and it'll appear here.</p><Link className="button-primary" to="/discover">Find your first book <ArrowRight size={16} /></Link></div>}
     </main>
   )
 }
@@ -307,12 +308,18 @@ function Footer() {
 }
 
 export default function App() {
-  const [savedIds, setSavedIds] = useState<string[]>([])
   const [search, setSearch] = useState('')
   const location = useLocation()
+  const navigate = useNavigate()
+  const { user } = useAuth()
+  const { savedIds, loading: shelfLoading, error: shelfError, toggle } = useSavedBooks()
 
   const toggleSave = (id: string) => {
-    setSavedIds((current) => current.includes(id) ? current.filter((savedId) => savedId !== id) : [...current, id])
+    if (!user) {
+      navigate('/auth', { state: { from: location.pathname + location.search } })
+      return
+    }
+    void toggle(id)
   }
 
   const runSearch = () => {
@@ -325,6 +332,7 @@ export default function App() {
     <div className="app-shell">
       <div className="announcement-bar"><span className="announcement-dot" /> A quieter corner of the internet, made for readers <span className="announcement-separator">·</span> <span className="announcement-end">Come as you are.</span></div>
       <Header />
+      {shelfError && <p className="auth-error" role="alert">{shelfError}</p>}
       <Routes>
         <Route path="/" element={<HomePage savedIds={savedIds} onToggleSave={toggleSave} search={search} setSearch={setSearch} onSearch={runSearch} />} />
         <Route path="/discover" element={<DiscoverPage savedIds={savedIds} onToggleSave={toggleSave} search={search} setSearch={setSearch} />} />
@@ -332,7 +340,11 @@ export default function App() {
           path="/library"
           element={
             <ProtectedRoute>
-              <LibraryPage savedIds={savedIds} onToggleSave={toggleSave} />
+              {shelfLoading ? (
+                <main className="page-gutter discover-page"><p>Loading your shelf…</p></main>
+              ) : (
+                <LibraryPage savedIds={savedIds} onToggleSave={toggleSave} />
+              )}
             </ProtectedRoute>
           }
         />

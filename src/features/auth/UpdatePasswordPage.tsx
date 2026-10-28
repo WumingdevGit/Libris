@@ -34,7 +34,7 @@ export default function UpdatePasswordPage() {
     <main className="auth-page">
       <section className="auth-panel">
         <h1>Choose a new password</h1>
-        <form className="auth-form" onSubmit={submit}>
+        <form className="auth-form auth-form-spaced" onSubmit={submit}>
           <label>
             New password
             <span className="password-field">
