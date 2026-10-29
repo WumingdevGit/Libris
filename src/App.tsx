@@ -7,6 +7,7 @@ import UpdatePasswordPage from "./features/auth/UpdatePasswordPage";
 import ProtectedRoute from './features/auth/ProtectedRoute'
 import { useSavedBooks } from './features/library/useSavedBooks'
 import { useSampleBooks } from './features/library/useCatalogue'
+import { useLiveSearch } from './features/library/useLiveSearch'
 import type { Book } from './features/library/books'
 import {
   ArrowDownRight,
@@ -100,15 +101,19 @@ function SectionHeading({ eyebrow, title, action }: { eyebrow?: string; title: s
   )
 }
 
+function Cover({ src, title }: { src: string; title: string }) {
+  const [failed, setFailed] = useState(false)
+  if (!src || failed) {
+    return <div className="book-cover book-cover-empty" aria-hidden="true"><BookOpen size={30} strokeWidth={1.4} /></div>
+  }
+  return <img className="book-cover" src={src} alt={`Cover of ${title}`} loading="lazy" onError={() => setFailed(true)} />
+}
+
 function BookCard({ book, saved, onToggleSave, compact = false }: { book: Book; saved: boolean; onToggleSave: (book: Book) => void; compact?: boolean }) {
   return (
     <article className={`book-card ${compact ? 'book-card-compact' : ''}`}>
       <div className={`book-cover-wrap cover-${book.tone}`}>
-        {book.cover ? (
-          <img className="book-cover" src={book.cover} alt={`Decorative cover image for ${book.title}`} loading="lazy" />
-        ) : (
-          <div className="book-cover" aria-hidden="true" />
-        )}
+        <Cover src={book.cover} title={book.title} />
         <button className={`save-book ${saved ? 'save-book-active' : ''}`} type="button" onClick={() => onToggleSave(book)} aria-label={saved ? `Remove ${book.title} from saved books` : `Save ${book.title}`} title={saved ? 'Saved to your shelf' : 'Save to your shelf'}>
           {saved ? <Heart size={17} fill="currentColor" /> : <Bookmark size={17} />}
         </button>
@@ -117,7 +122,7 @@ function BookCard({ book, saved, onToggleSave, compact = false }: { book: Book; 
       <div className="book-meta">
         <h3>{book.title}</h3>
         <p className="book-author">{book.author}</p>
-        {!compact && <p className="book-note">{book.note}</p>}
+        {!compact && book.note && <p className="book-note">{book.note}</p>}
       </div>
     </article>
   )
@@ -193,9 +198,10 @@ function HomePage({ books, savedIds, onToggleSave, search, setSearch, onSearch }
 
 function ArrowUpRightIcon() { return <ArrowRight className="tile-arrow" size={19} /> }
 
-function DiscoverPage({ books, loading, savedIds, onToggleSave, search, setSearch }: { books: Book[]; loading: boolean; savedIds: string[]; onToggleSave: (book: Book) => void; search: string; setSearch: (value: string) => void }) {
+function DiscoverPage({ books, loading, error, onRetry, savedIds, onToggleSave, search, setSearch }: { books: Book[]; loading: boolean; error: string; onRetry: () => void; savedIds: string[]; onToggleSave: (book: Book) => void; search: string; setSearch: (value: string) => void }) {
   const [genre, setGenre] = useState('All books')
   const [sort, setSort] = useState('Recommended')
+  const live = useLiveSearch(search)
   const genres = ['All books', 'Fiction', 'Literary fiction', 'Memoir', 'Design', 'Fantasy', 'Personal growth']
   const filteredBooks = useMemo(() => {
     const term = search.trim().toLowerCase()
@@ -212,18 +218,47 @@ function DiscoverPage({ books, loading, savedIds, onToggleSave, search, setSearc
       <div className="page-intro">
         <p className="eyebrow">THE OPEN SHELF</p>
         <h1>Follow a <em>feeling.</em></h1>
-        <p>Search by title, author, genre, or the kind of story you need today. This first preview uses sample books; live catalogue search arrives in a later milestone.</p>
+        <p>Search by title, author, or topic. As you type, LIBRIS searches the Open Library catalogue. Clear the box to browse the featured shelf.</p>
       </div>
       <SearchBox value={search} onChange={setSearch} onSubmit={() => undefined} />
-      <div className="discover-toolbar">
-        <div className="filter-label"><SlidersHorizontal size={16} /> Browse by</div>
-        <div className="genre-filters" aria-label="Filter by genre">
-          {genres.map((item) => <button key={item} className={`genre-chip ${genre === item ? 'genre-chip-active' : ''}`} type="button" onClick={() => setGenre(item)}>{item}</button>)}
-        </div>
-        <label className="sort-control">Sort <ChevronDown size={14} /><select value={sort} onChange={(event) => setSort(event.target.value)} aria-label="Sort books"><option>Recommended</option><option>Title A–Z</option></select></label>
-      </div>
-      <div className="results-line"><span>{filteredBooks.length} {filteredBooks.length === 1 ? 'book' : 'books'} to explore</span><span>Preview catalogue · sample data</span></div>
-      {loading ? <p>Loading the shelf…</p> : filteredBooks.length ? <div className="book-grid discover-grid">{filteredBooks.map((book) => <BookCard key={book.id} book={book} saved={savedIds.includes(book.id)} onToggleSave={onToggleSave} />)}</div> : <div className="empty-state"><Search size={25} /><h2>No matches on this shelf</h2><p>Try a different title, author, or genre. The live catalogue will expand these results later.</p><button className="button-secondary" type="button" onClick={() => { setSearch(''); setGenre('All books') }}>Clear search and filters</button></div>}
+
+      {live.active ? (
+        <>
+          <div className="results-line">
+            <span>{live.loading ? 'Searching…' : `${live.books.length} ${live.books.length === 1 ? 'book' : 'books'} found`}</span>
+            <span>Results from Open Library</span>
+          </div>
+          {live.error ? (
+            <p className="auth-error" role="alert">{live.error}</p>
+          ) : live.loading ? (
+            <p>Searching the catalogue…</p>
+          ) : live.books.length ? (
+            <div className="book-grid discover-grid">{live.books.map((book) => <BookCard key={book.id} book={book} saved={savedIds.includes(book.id)} onToggleSave={onToggleSave} />)}</div>
+          ) : (
+            <div className="empty-state"><Search size={25} /><h2>No matches found</h2><p>Try a different title, author, or topic.</p><button className="button-secondary" type="button" onClick={() => setSearch('')}>Clear search</button></div>
+          )}
+        </>
+      ) : (
+        <>
+          <div className="discover-toolbar">
+            <div className="filter-label"><SlidersHorizontal size={16} /> Browse by</div>
+            <div className="genre-filters" aria-label="Filter by genre">
+              {genres.map((item) => <button key={item} className={`genre-chip ${genre === item ? 'genre-chip-active' : ''}`} type="button" onClick={() => setGenre(item)}>{item}</button>)}
+            </div>
+            <label className="sort-control">Sort <ChevronDown size={14} /><select value={sort} onChange={(event) => setSort(event.target.value)} aria-label="Sort books"><option>Recommended</option><option>Title A–Z</option></select></label>
+          </div>
+          <div className="results-line"><span>{filteredBooks.length} {filteredBooks.length === 1 ? 'book' : 'books'} to explore</span><span>Featured shelf</span></div>
+          {loading ? (
+            <p>Loading the shelf…</p>
+          ) : error ? (
+            <div className="empty-state"><Search size={25} /><h2>Couldn't load the featured books</h2><p>Check your connection and try again.</p><button className="button-secondary" type="button" onClick={onRetry}>Try again</button></div>
+          ) : filteredBooks.length ? (
+            <div className="book-grid discover-grid">{filteredBooks.map((book) => <BookCard key={book.id} book={book} saved={savedIds.includes(book.id)} onToggleSave={onToggleSave} />)}</div>
+          ) : (
+            <div className="empty-state"><Search size={25} /><h2>No matches on this shelf</h2><p>Try a different genre, or search the full catalogue above.</p><button className="button-secondary" type="button" onClick={() => { setSearch(''); setGenre('All books') }}>Clear search and filters</button></div>
+          )}
+        </>
+      )}
     </main>
   )
 }
@@ -250,7 +285,7 @@ export default function App() {
   const location = useLocation()
   const navigate = useNavigate()
   const { user } = useAuth()
-  const { books, loading: booksLoading } = useSampleBooks()
+  const { books, loading: booksLoading, error: booksError, retry: retryBooks } = useSampleBooks()
   const { savedBooks, savedIds, loading: shelfLoading, error: shelfError, toggle } = useSavedBooks()
 
   const toggleSave = (book: Book) => {
@@ -262,9 +297,7 @@ export default function App() {
   }
 
   const runSearch = () => {
-    if (location.pathname !== '/discover') window.history.pushState({}, '', '/discover')
-    // Keep the app's shared search state; the discover page filters it immediately on navigation.
-    window.dispatchEvent(new PopStateEvent('popstate'))
+    if (location.pathname !== '/discover') navigate('/discover')
   }
 
   return (
@@ -274,7 +307,7 @@ export default function App() {
       {shelfError && <p className="auth-error" role="alert">{shelfError}</p>}
       <Routes>
         <Route path="/" element={<HomePage books={books} savedIds={savedIds} onToggleSave={toggleSave} search={search} setSearch={setSearch} onSearch={runSearch} />} />
-        <Route path="/discover" element={<DiscoverPage books={books} loading={booksLoading} savedIds={savedIds} onToggleSave={toggleSave} search={search} setSearch={setSearch} />} />
+        <Route path="/discover" element={<DiscoverPage books={books} loading={booksLoading} error={booksError} onRetry={retryBooks} savedIds={savedIds} onToggleSave={toggleSave} search={search} setSearch={setSearch} />} />
         <Route
           path="/library"
           element={
