@@ -1,22 +1,23 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "../../services/supabase/client";
 import { useAuth } from "../auth/AuthContext";
+import { BOOK_COLUMNS, toBook, type Book, type BookRow } from "./books";
 
-type BookRow = { id: string; provider_book_id: string };
+type SavedRow = { books: BookRow | BookRow[] | null };
 
 export function useSavedBooks() {
   const { user } = useAuth();
   const userId = user?.id ?? null;
 
-  const [state, setState] = useState<{ userId: string | null; ids: string[] }>({
+  const [state, setState] = useState<{ userId: string | null; books: Book[] }>({
     userId: null,
-    ids: [],
+    books: [],
   });
   const [error, setError] = useState("");
-  const uuidBySlug = useRef<Map<string, string>>(new Map());
 
   const loaded = !!userId && state.userId === userId;
-  const savedIds = loaded ? state.ids : [];
+  const savedBooks = loaded ? state.books : [];
+  const savedIds = savedBooks.map((b) => b.id);
   const loading = !!userId && !loaded;
 
   useEffect(() => {
@@ -24,32 +25,25 @@ export function useSavedBooks() {
     let alive = true;
 
     (async () => {
-      const [booksRes, savedRes] = await Promise.all([
-        supabase
-          .from("books")
-          .select("id, provider_book_id")
-          .eq("provider", "sample"),
-        supabase.from("user_books").select("book_id").eq("user_id", userId),
-      ]);
+      const { data, error: dbError } = await supabase
+        .from("user_books")
+        .select(`created_at, books(${BOOK_COLUMNS})`)
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false });
       if (!alive) return;
 
-      if (booksRes.error || savedRes.error) {
+      if (dbError) {
         setError("Couldn't load your shelf. Please refresh.");
-        setState({ userId, ids: [] });
+        setState({ userId, books: [] });
         return;
       }
 
-      const books = (booksRes.data ?? []) as BookRow[];
-      uuidBySlug.current = new Map(books.map((b) => [b.provider_book_id, b.id]));
-
-      const savedUuids = new Set(
-        ((savedRes.data ?? []) as { book_id: string }[]).map((r) => r.book_id)
-      );
+      const rows = (data ?? []) as unknown as SavedRow[];
+      const books = rows
+        .flatMap((r) => (Array.isArray(r.books) ? r.books : r.books ? [r.books] : []))
+        .map(toBook);
       setError("");
-      setState({
-        userId,
-        ids: books.filter((b) => savedUuids.has(b.id)).map((b) => b.provider_book_id),
-      });
+      setState({ userId, books });
     })();
 
     return () => {
@@ -57,20 +51,15 @@ export function useSavedBooks() {
     };
   }, [userId]);
 
-  async function toggle(slug: string) {
+  async function toggle(book: Book) {
     if (!userId) return;
-    const bookUuid = uuidBySlug.current.get(slug);
-    if (!bookUuid) {
-      setError("This book isn't in the database yet.");
-      return;
-    }
 
-    const before = savedIds;
-    const wasSaved = before.includes(slug);
+    const before = savedBooks;
+    const wasSaved = before.some((b) => b.id === book.id);
     setError("");
     setState({
       userId,
-      ids: wasSaved ? before.filter((id) => id !== slug) : [...before, slug],
+      books: wasSaved ? before.filter((b) => b.id !== book.id) : [book, ...before],
     });
 
     const { error: dbError } = wasSaved
@@ -78,17 +67,17 @@ export function useSavedBooks() {
           .from("user_books")
           .delete()
           .eq("user_id", userId)
-          .eq("book_id", bookUuid)
+          .eq("book_id", book.id)
       : await supabase
           .from("user_books")
-          .insert({ user_id: userId, book_id: bookUuid });
+          .insert({ user_id: userId, book_id: book.id });
 
     // 23505 = already saved (unique violation), which is fine
     if (dbError && dbError.code !== "23505") {
-      setState({ userId, ids: before });
+      setState({ userId, books: before });
       setError("Couldn't update your shelf. Please try again.");
     }
   }
 
-  return { savedIds, loading, error, toggle };
+  return { savedBooks, savedIds, loading, error, toggle };
 }

@@ -6,6 +6,8 @@ import AuthCallback from "./features/auth/AuthCallback";
 import UpdatePasswordPage from "./features/auth/UpdatePasswordPage";
 import ProtectedRoute from './features/auth/ProtectedRoute'
 import { useSavedBooks } from './features/library/useSavedBooks'
+import { useSampleBooks } from './features/library/useCatalogue'
+import type { Book } from './features/library/books'
 import {
   ArrowDownRight,
   ArrowRight,
@@ -24,73 +26,6 @@ import {
   X,
 } from 'lucide-react'
 import './App.css'
-
-type Book = {
-  id: string
-  title: string
-  author: string
-  genre: string
-  note: string
-  cover: string
-  tone: string
-}
-
-const books: Book[] = [
-  {
-    id: 'midnight-library',
-    title: 'The Midnight Library',
-    author: 'Matt Haig',
-    genre: 'Fiction',
-    note: 'For the what-ifs and second chances',
-    cover: 'https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&w=700&q=85',
-    tone: 'olive',
-  },
-  {
-    id: 'educated',
-    title: 'Educated',
-    author: 'Tara Westover',
-    genre: 'Memoir',
-    note: 'A life rebuilt through learning',
-    cover: 'https://images.unsplash.com/photo-1519682337058-a94d519337bc?auto=format&fit=crop&w=700&q=85',
-    tone: 'rust',
-  },
-  {
-    id: 'small-things',
-    title: 'Small Things Like These',
-    author: 'Claire Keegan',
-    genre: 'Literary fiction',
-    note: 'Quiet, precise, and deeply human',
-    cover: 'https://images.unsplash.com/photo-1512820790803-83ca734da794?auto=format&fit=crop&w=700&q=85',
-    tone: 'blue',
-  },
-  {
-    id: 'design-everyday',
-    title: 'The Design of Everyday Things',
-    author: 'Don Norman',
-    genre: 'Design',
-    note: 'See ordinary things differently',
-    cover: 'https://images.unsplash.com/photo-1543002588-bfa74002ed7e?auto=format&fit=crop&w=700&q=85',
-    tone: 'gold',
-  },
-  {
-    id: 'song-achilles',
-    title: 'The Song of Achilles',
-    author: 'Madeline Miller',
-    genre: 'Fantasy',
-    note: 'Myth, memory, and devotion',
-    cover: 'https://images.unsplash.com/photo-1513001900722-370f803f498d?auto=format&fit=crop&w=700&q=85',
-    tone: 'plum',
-  },
-  {
-    id: 'atomic-habits',
-    title: 'Atomic Habits',
-    author: 'James Clear',
-    genre: 'Personal growth',
-    note: 'Small changes, thoughtfully applied',
-    cover: 'https://images.unsplash.com/photo-1516979187457-637abb4f9353?auto=format&fit=crop&w=700&q=85',
-    tone: 'sand',
-  },
-]
 
 const navItems = [
   { to: '/', label: 'Home', icon: Compass, end: true },
@@ -165,12 +100,16 @@ function SectionHeading({ eyebrow, title, action }: { eyebrow?: string; title: s
   )
 }
 
-function BookCard({ book, saved, onToggleSave, compact = false }: { book: Book; saved: boolean; onToggleSave: (id: string) => void; compact?: boolean }) {
+function BookCard({ book, saved, onToggleSave, compact = false }: { book: Book; saved: boolean; onToggleSave: (book: Book) => void; compact?: boolean }) {
   return (
     <article className={`book-card ${compact ? 'book-card-compact' : ''}`}>
       <div className={`book-cover-wrap cover-${book.tone}`}>
-        <img className="book-cover" src={book.cover} alt={`Decorative cover image for ${book.title}`} loading="lazy" />
-        <button className={`save-book ${saved ? 'save-book-active' : ''}`} type="button" onClick={() => onToggleSave(book.id)} aria-label={saved ? `Remove ${book.title} from saved books` : `Save ${book.title}`} title={saved ? 'Saved to your shelf' : 'Save to your shelf'}>
+        {book.cover ? (
+          <img className="book-cover" src={book.cover} alt={`Decorative cover image for ${book.title}`} loading="lazy" />
+        ) : (
+          <div className="book-cover" aria-hidden="true" />
+        )}
+        <button className={`save-book ${saved ? 'save-book-active' : ''}`} type="button" onClick={() => onToggleSave(book)} aria-label={saved ? `Remove ${book.title} from saved books` : `Save ${book.title}`} title={saved ? 'Saved to your shelf' : 'Save to your shelf'}>
           {saved ? <Heart size={17} fill="currentColor" /> : <Bookmark size={17} />}
         </button>
         <span className="cover-caption">{book.genre}</span>
@@ -194,8 +133,8 @@ function SearchBox({ value, onChange, onSubmit }: { value: string; onChange: (va
   )
 }
 
-function HomePage({ savedIds, onToggleSave, search, setSearch, onSearch }: {
-  savedIds: string[]; onToggleSave: (id: string) => void; search: string; setSearch: (value: string) => void; onSearch: () => void
+function HomePage({ books, savedIds, onToggleSave, search, setSearch, onSearch }: {
+  books: Book[]; savedIds: string[]; onToggleSave: (book: Book) => void; search: string; setSearch: (value: string) => void; onSearch: () => void
 }) {
   const picks = books.slice(0, 4)
   return (
@@ -254,7 +193,7 @@ function HomePage({ savedIds, onToggleSave, search, setSearch, onSearch }: {
 
 function ArrowUpRightIcon() { return <ArrowRight className="tile-arrow" size={19} /> }
 
-function DiscoverPage({ savedIds, onToggleSave, search, setSearch }: { savedIds: string[]; onToggleSave: (id: string) => void; search: string; setSearch: (value: string) => void }) {
+function DiscoverPage({ books, loading, savedIds, onToggleSave, search, setSearch }: { books: Book[]; loading: boolean; savedIds: string[]; onToggleSave: (book: Book) => void; search: string; setSearch: (value: string) => void }) {
   const [genre, setGenre] = useState('All books')
   const [sort, setSort] = useState('Recommended')
   const genres = ['All books', 'Fiction', 'Literary fiction', 'Memoir', 'Design', 'Fantasy', 'Personal growth']
@@ -266,7 +205,7 @@ function DiscoverPage({ savedIds, onToggleSave, search, setSearch }: { savedIds:
       return matchesSearch && matchesGenre
     })
     return sort === 'Title A–Z' ? [...result].sort((a, b) => a.title.localeCompare(b.title)) : result
-  }, [genre, search, sort])
+  }, [books, genre, search, sort])
 
   return (
     <main className="page-gutter discover-page">
@@ -284,13 +223,12 @@ function DiscoverPage({ savedIds, onToggleSave, search, setSearch }: { savedIds:
         <label className="sort-control">Sort <ChevronDown size={14} /><select value={sort} onChange={(event) => setSort(event.target.value)} aria-label="Sort books"><option>Recommended</option><option>Title A–Z</option></select></label>
       </div>
       <div className="results-line"><span>{filteredBooks.length} {filteredBooks.length === 1 ? 'book' : 'books'} to explore</span><span>Preview catalogue · sample data</span></div>
-      {filteredBooks.length ? <div className="book-grid discover-grid">{filteredBooks.map((book) => <BookCard key={book.id} book={book} saved={savedIds.includes(book.id)} onToggleSave={onToggleSave} />)}</div> : <div className="empty-state"><Search size={25} /><h2>No matches on this shelf</h2><p>Try a different title, author, or genre. The live catalogue will expand these results later.</p><button className="button-secondary" type="button" onClick={() => { setSearch(''); setGenre('All books') }}>Clear search and filters</button></div>}
+      {loading ? <p>Loading the shelf…</p> : filteredBooks.length ? <div className="book-grid discover-grid">{filteredBooks.map((book) => <BookCard key={book.id} book={book} saved={savedIds.includes(book.id)} onToggleSave={onToggleSave} />)}</div> : <div className="empty-state"><Search size={25} /><h2>No matches on this shelf</h2><p>Try a different title, author, or genre. The live catalogue will expand these results later.</p><button className="button-secondary" type="button" onClick={() => { setSearch(''); setGenre('All books') }}>Clear search and filters</button></div>}
     </main>
   )
 }
 
-function LibraryPage({ savedIds, onToggleSave }: { savedIds: string[]; onToggleSave: (id: string) => void }) {
-  const savedBooks = books.filter((book) => savedIds.includes(book.id))
+function LibraryPage({ savedBooks, onToggleSave }: { savedBooks: Book[]; onToggleSave: (book: Book) => void }) {
   return (
     <main className="page-gutter discover-page library-page">
       <div className="page-intro"><p className="eyebrow">YOUR PERSONAL CORNER</p><h1>My <em>shelf.</em></h1><p>Keep the books that caught your eye close by. Your saved books are stored with your account.</p></div>
@@ -312,14 +250,15 @@ export default function App() {
   const location = useLocation()
   const navigate = useNavigate()
   const { user } = useAuth()
-  const { savedIds, loading: shelfLoading, error: shelfError, toggle } = useSavedBooks()
+  const { books, loading: booksLoading } = useSampleBooks()
+  const { savedBooks, savedIds, loading: shelfLoading, error: shelfError, toggle } = useSavedBooks()
 
-  const toggleSave = (id: string) => {
+  const toggleSave = (book: Book) => {
     if (!user) {
       navigate('/auth', { state: { from: location.pathname + location.search } })
       return
     }
-    void toggle(id)
+    void toggle(book)
   }
 
   const runSearch = () => {
@@ -334,8 +273,8 @@ export default function App() {
       <Header />
       {shelfError && <p className="auth-error" role="alert">{shelfError}</p>}
       <Routes>
-        <Route path="/" element={<HomePage savedIds={savedIds} onToggleSave={toggleSave} search={search} setSearch={setSearch} onSearch={runSearch} />} />
-        <Route path="/discover" element={<DiscoverPage savedIds={savedIds} onToggleSave={toggleSave} search={search} setSearch={setSearch} />} />
+        <Route path="/" element={<HomePage books={books} savedIds={savedIds} onToggleSave={toggleSave} search={search} setSearch={setSearch} onSearch={runSearch} />} />
+        <Route path="/discover" element={<DiscoverPage books={books} loading={booksLoading} savedIds={savedIds} onToggleSave={toggleSave} search={search} setSearch={setSearch} />} />
         <Route
           path="/library"
           element={
@@ -343,7 +282,7 @@ export default function App() {
               {shelfLoading ? (
                 <main className="page-gutter discover-page"><p>Loading your shelf…</p></main>
               ) : (
-                <LibraryPage savedIds={savedIds} onToggleSave={toggleSave} />
+                <LibraryPage savedBooks={savedBooks} onToggleSave={toggleSave} />
               )}
             </ProtectedRoute>
           }
