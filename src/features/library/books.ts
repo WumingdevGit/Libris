@@ -1,3 +1,19 @@
+export const STATUSES = [
+  "want_to_read",
+  "currently_reading",
+  "finished",
+  "paused",
+] as const;
+
+export type Status = (typeof STATUSES)[number];
+
+export const STATUS_LABELS: Record<Status, string> = {
+  want_to_read: "Want to read",
+  currently_reading: "Reading now",
+  finished: "Finished",
+  paused: "Paused",
+};
+
 export type Book = {
   id: string; // books.id (uuid)
   title: string;

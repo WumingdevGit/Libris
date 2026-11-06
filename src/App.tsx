@@ -8,7 +8,9 @@ import ProtectedRoute from './features/auth/ProtectedRoute'
 import { useSavedBooks } from './features/library/useSavedBooks'
 import { useSampleBooks } from './features/library/useCatalogue'
 import { useLiveSearch } from './features/library/useLiveSearch'
-import type { Book } from './features/library/books'
+import BookPage from './features/library/BookPage'
+import Cover from './features/library/Cover'
+import { STATUSES, STATUS_LABELS, type Book, type Status } from './features/library/books'
 import {
   ArrowDownRight,
   ArrowRight,
@@ -101,28 +103,39 @@ function SectionHeading({ eyebrow, title, action }: { eyebrow?: string; title: s
   )
 }
 
-function Cover({ src, title }: { src: string; title: string }) {
-  const [failed, setFailed] = useState(false)
-  if (!src || failed) {
-    return <div className="book-cover book-cover-empty" aria-hidden="true"><BookOpen size={30} strokeWidth={1.4} /></div>
-  }
-  return <img className="book-cover" src={src} alt={`Cover of ${title}`} loading="lazy" onError={() => setFailed(true)} />
-}
-
-function BookCard({ book, saved, onToggleSave, compact = false }: { book: Book; saved: boolean; onToggleSave: (book: Book) => void; compact?: boolean }) {
+function BookCard({ book, saved, onToggleSave, status, onStatusChange, compact = false }: {
+  book: Book
+  saved: boolean
+  onToggleSave: (book: Book) => void
+  status?: Status
+  onStatusChange?: (status: Status) => void
+  compact?: boolean
+}) {
   return (
     <article className={`book-card ${compact ? 'book-card-compact' : ''}`}>
       <div className={`book-cover-wrap cover-${book.tone}`}>
-        <Cover src={book.cover} title={book.title} />
+        <Link to={`/book/${book.id}`} className="book-link" aria-label={`View ${book.title}`}>
+          <Cover src={book.cover} title={book.title} />
+        </Link>
         <button className={`save-book ${saved ? 'save-book-active' : ''}`} type="button" onClick={() => onToggleSave(book)} aria-label={saved ? `Remove ${book.title} from saved books` : `Save ${book.title}`} title={saved ? 'Saved to your shelf' : 'Save to your shelf'}>
           {saved ? <Heart size={17} fill="currentColor" /> : <Bookmark size={17} />}
         </button>
         <span className="cover-caption">{book.genre}</span>
       </div>
       <div className="book-meta">
-        <h3>{book.title}</h3>
+        <h3><Link to={`/book/${book.id}`}>{book.title}</Link></h3>
         <p className="book-author">{book.author}</p>
         {!compact && book.note && <p className="book-note">{book.note}</p>}
+        {status && onStatusChange && (
+          <select
+            className="status-select"
+            value={status}
+            onChange={(event) => onStatusChange(event.target.value as Status)}
+            aria-label={`Reading status for ${book.title}`}
+          >
+            {STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)}
+          </select>
+        )}
       </div>
     </article>
   )
@@ -263,11 +276,47 @@ function DiscoverPage({ books, loading, error, onRetry, savedIds, onToggleSave, 
   )
 }
 
-function LibraryPage({ savedBooks, onToggleSave }: { savedBooks: Book[]; onToggleSave: (book: Book) => void }) {
+function LibraryPage({ savedBooks, statuses, onToggleSave, onSetStatus }: {
+  savedBooks: Book[]
+  statuses: Record<string, Status>
+  onToggleSave: (book: Book) => void
+  onSetStatus: (bookId: string, status: Status) => void
+}) {
+  const [filter, setFilter] = useState<'all' | Status>('all')
+  const shown = filter === 'all' ? savedBooks : savedBooks.filter((book) => statuses[book.id] === filter)
+
   return (
     <main className="page-gutter discover-page library-page">
-      <div className="page-intro"><p className="eyebrow">YOUR PERSONAL CORNER</p><h1>My <em>shelf.</em></h1><p>Keep the books that caught your eye close by. Your saved books are stored with your account.</p></div>
-      {savedBooks.length ? <><div className="results-line"><span>{savedBooks.length} saved {savedBooks.length === 1 ? 'book' : 'books'}</span><span>Your shelf</span></div><div className="book-grid discover-grid">{savedBooks.map((book) => <BookCard key={book.id} book={book} saved onToggleSave={onToggleSave} />)}</div></> : <div className="empty-state"><Bookmark size={25} /><h2>Your shelf is waiting</h2><p>Save a book that catches your attention and it'll appear here.</p><Link className="button-primary" to="/discover">Find your first book <ArrowRight size={16} /></Link></div>}
+      <div className="page-intro"><p className="eyebrow">YOUR PERSONAL CORNER</p><h1>My <em>shelf.</em></h1><p>Keep the books that caught your eye close by. Your saved books and reading status are stored with your account.</p></div>
+      {savedBooks.length ? (
+        <>
+          <div className="genre-filters library-filters" aria-label="Filter by reading status">
+            <button className={`genre-chip ${filter === 'all' ? 'genre-chip-active' : ''}`} type="button" onClick={() => setFilter('all')}>All</button>
+            {STATUSES.map((s) => (
+              <button key={s} className={`genre-chip ${filter === s ? 'genre-chip-active' : ''}`} type="button" onClick={() => setFilter(s)}>{STATUS_LABELS[s]}</button>
+            ))}
+          </div>
+          <div className="results-line"><span>{shown.length} {shown.length === 1 ? 'book' : 'books'}</span><span>Your shelf</span></div>
+          {shown.length ? (
+            <div className="book-grid discover-grid">
+              {shown.map((book) => (
+                <BookCard
+                  key={book.id}
+                  book={book}
+                  saved
+                  onToggleSave={onToggleSave}
+                  status={statuses[book.id] ?? 'want_to_read'}
+                  onStatusChange={(next) => onSetStatus(book.id, next)}
+                />
+              ))}
+            </div>
+          ) : (
+            <p>No books with this status yet.</p>
+          )}
+        </>
+      ) : (
+        <div className="empty-state"><Bookmark size={25} /><h2>Your shelf is waiting</h2><p>Save a book that catches your attention and it'll appear here.</p><Link className="button-primary" to="/discover">Find your first book <ArrowRight size={16} /></Link></div>
+      )}
     </main>
   )
 }
@@ -286,7 +335,7 @@ export default function App() {
   const navigate = useNavigate()
   const { user } = useAuth()
   const { books, loading: booksLoading, error: booksError, retry: retryBooks } = useSampleBooks()
-  const { savedBooks, savedIds, loading: shelfLoading, error: shelfError, toggle } = useSavedBooks()
+  const { savedBooks, savedIds, statuses, loading: shelfLoading, error: shelfError, toggle, setStatus } = useSavedBooks()
 
   const toggleSave = (book: Book) => {
     if (!user) {
@@ -294,6 +343,10 @@ export default function App() {
       return
     }
     void toggle(book)
+  }
+
+  const changeStatus = (bookId: string, status: Status) => {
+    void setStatus(bookId, status)
   }
 
   const runSearch = () => {
@@ -308,6 +361,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<HomePage books={books} savedIds={savedIds} onToggleSave={toggleSave} search={search} setSearch={setSearch} onSearch={runSearch} />} />
         <Route path="/discover" element={<DiscoverPage books={books} loading={booksLoading} error={booksError} onRetry={retryBooks} savedIds={savedIds} onToggleSave={toggleSave} search={search} setSearch={setSearch} />} />
+        <Route path="/book/:id" element={<BookPage savedIds={savedIds} statuses={statuses} onToggleSave={toggleSave} onSetStatus={changeStatus} />} />
         <Route
           path="/library"
           element={
@@ -315,7 +369,7 @@ export default function App() {
               {shelfLoading ? (
                 <main className="page-gutter discover-page"><p>Loading your shelf…</p></main>
               ) : (
-                <LibraryPage savedBooks={savedBooks} onToggleSave={toggleSave} />
+                <LibraryPage savedBooks={savedBooks} statuses={statuses} onToggleSave={toggleSave} onSetStatus={changeStatus} />
               )}
             </ProtectedRoute>
           }

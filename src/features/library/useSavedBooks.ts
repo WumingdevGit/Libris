@@ -1,22 +1,35 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../../services/supabase/client";
 import { useAuth } from "../auth/AuthContext";
-import { BOOK_COLUMNS, toBook, type Book, type BookRow } from "./books";
+import {
+  BOOK_COLUMNS,
+  toBook,
+  type Book,
+  type BookRow,
+  type Status,
+} from "./books";
 
-type SavedRow = { books: BookRow | BookRow[] | null };
+type SavedRow = { status: Status; books: BookRow | BookRow[] | null };
+type Shelf = {
+  userId: string | null;
+  books: Book[];
+  statuses: Record<string, Status>;
+};
 
 export function useSavedBooks() {
   const { user } = useAuth();
   const userId = user?.id ?? null;
 
-  const [state, setState] = useState<{ userId: string | null; books: Book[] }>({
+  const [shelf, setShelf] = useState<Shelf>({
     userId: null,
     books: [],
+    statuses: {},
   });
   const [error, setError] = useState("");
 
-  const loaded = !!userId && state.userId === userId;
-  const savedBooks = loaded ? state.books : [];
+  const loaded = !!userId && shelf.userId === userId;
+  const savedBooks = loaded ? shelf.books : [];
+  const statuses: Record<string, Status> = loaded ? shelf.statuses : {};
   const savedIds = savedBooks.map((b) => b.id);
   const loading = !!userId && !loaded;
 
@@ -27,23 +40,29 @@ export function useSavedBooks() {
     (async () => {
       const { data, error: dbError } = await supabase
         .from("user_books")
-        .select(`created_at, books(${BOOK_COLUMNS})`)
+        .select(`status, created_at, books(${BOOK_COLUMNS})`)
         .eq("user_id", userId)
         .order("created_at", { ascending: false });
       if (!alive) return;
 
       if (dbError) {
         setError("Couldn't load your shelf. Please refresh.");
-        setState({ userId, books: [] });
+        setShelf({ userId, books: [], statuses: {} });
         return;
       }
 
       const rows = (data ?? []) as unknown as SavedRow[];
-      const books = rows
-        .flatMap((r) => (Array.isArray(r.books) ? r.books : r.books ? [r.books] : []))
-        .map(toBook);
+      const books: Book[] = [];
+      const nextStatuses: Record<string, Status> = {};
+      for (const row of rows) {
+        const bookRow = Array.isArray(row.books) ? row.books[0] : row.books;
+        if (!bookRow) continue;
+        const book = toBook(bookRow);
+        books.push(book);
+        nextStatuses[book.id] = row.status;
+      }
       setError("");
-      setState({ userId, books });
+      setShelf({ userId, books, statuses: nextStatuses });
     })();
 
     return () => {
@@ -54,13 +73,24 @@ export function useSavedBooks() {
   async function toggle(book: Book) {
     if (!userId) return;
 
-    const before = savedBooks;
-    const wasSaved = before.some((b) => b.id === book.id);
+    const before = { books: savedBooks, statuses };
+    const wasSaved = before.books.some((b) => b.id === book.id);
     setError("");
-    setState({
-      userId,
-      books: wasSaved ? before.filter((b) => b.id !== book.id) : [book, ...before],
-    });
+
+    if (wasSaved) {
+      const { [book.id]: _removed, ...rest } = before.statuses;
+      setShelf({
+        userId,
+        books: before.books.filter((b) => b.id !== book.id),
+        statuses: rest,
+      });
+    } else {
+      setShelf({
+        userId,
+        books: [book, ...before.books],
+        statuses: { ...before.statuses, [book.id]: "want_to_read" },
+      });
+    }
 
     const { error: dbError } = wasSaved
       ? await supabase
@@ -74,10 +104,33 @@ export function useSavedBooks() {
 
     // 23505 = already saved (unique violation), which is fine
     if (dbError && dbError.code !== "23505") {
-      setState({ userId, books: before });
+      setShelf({ userId, ...before });
       setError("Couldn't update your shelf. Please try again.");
     }
   }
 
-  return { savedBooks, savedIds, loading, error, toggle };
+  async function setStatus(bookId: string, status: Status) {
+    if (!userId) return;
+
+    const before = { books: savedBooks, statuses };
+    setError("");
+    setShelf({
+      userId,
+      books: before.books,
+      statuses: { ...before.statuses, [bookId]: status },
+    });
+
+    const { error: dbError } = await supabase
+      .from("user_books")
+      .update({ status, updated_at: new Date().toISOString() })
+      .eq("user_id", userId)
+      .eq("book_id", bookId);
+
+    if (dbError) {
+      setShelf({ userId, ...before });
+      setError("Couldn't update the reading status. Please try again.");
+    }
+  }
+
+  return { savedBooks, savedIds, statuses, loading, error, toggle, setStatus };
 }
