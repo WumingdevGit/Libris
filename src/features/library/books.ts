@@ -14,6 +14,8 @@ export const STATUS_LABELS: Record<Status, string> = {
   paused: "Paused",
 };
 
+export type Access = "public" | "borrowable" | "restricted" | "none";
+
 export type Book = {
   id: string; // books.id (uuid)
   title: string;
@@ -22,6 +24,8 @@ export type Book = {
   note: string;
   cover: string;
   tone: string;
+  access: Access;
+  readable: boolean; // free to read inside LIBRIS
 };
 
 export type BookRow = {
@@ -33,10 +37,12 @@ export type BookRow = {
   published_year?: number | null;
   authors?: string[] | null;
   subjects?: string[] | null;
+  access?: string | null;
+  ia_id?: string | null;
 };
 
 export const BOOK_COLUMNS =
-  "id, title, subtitle, description, cover_url, published_year, authors, subjects";
+  "id, title, subtitle, description, cover_url, published_year, authors, subjects, access, ia_id";
 
 const TONES = ["olive", "rust", "blue", "gold", "plum", "sand"];
 
@@ -46,7 +52,14 @@ function toneFor(id: string) {
   return TONES[h % TONES.length];
 }
 
+function normaliseAccess(value: string | null | undefined): Access {
+  return value === "public" || value === "borrowable" || value === "restricted"
+    ? value
+    : "none";
+}
+
 export function toBook(row: BookRow): Book {
+  const access = normaliseAccess(row.access);
   return {
     id: row.id,
     title: row.title,
@@ -57,5 +70,7 @@ export function toBook(row: BookRow): Book {
       (row.published_year ? `First published ${row.published_year}` : ""),
     cover: row.cover_url ?? "",
     tone: toneFor(row.id),
+    access,
+    readable: access === "public" && !!row.ia_id,
   };
 }

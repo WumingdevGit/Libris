@@ -3,12 +3,14 @@ import { FunctionsHttpError } from "@supabase/supabase-js";
 import { supabase } from "../../services/supabase/client";
 import { toBook, type Book, type BookRow } from "./books";
 
-type Result = { q: string; books: Book[]; error: string };
+export type AccessFilter = "all" | "free" | "borrow";
 
-export function useLiveSearch(query: string) {
+type Result = { key: string; books: Book[]; error: string };
+
+export function useLiveSearch(query: string, filter: AccessFilter) {
   const term = query.trim();
   const [debounced, setDebounced] = useState("");
-  const [result, setResult] = useState<Result>({ q: "", books: [], error: "" });
+  const [result, setResult] = useState<Result>({ key: "", books: [], error: "" });
 
   // Wait until the person pauses typing
   useEffect(() => {
@@ -19,10 +21,11 @@ export function useLiveSearch(query: string) {
   useEffect(() => {
     if (debounced.length < 2) return;
     let alive = true;
+    const key = `${debounced}|${filter}`;
 
     (async () => {
       const { data, error } = await supabase.functions.invoke("search-books", {
-        body: { q: debounced },
+        body: { q: debounced, access: filter },
       });
       if (!alive) return;
 
@@ -30,7 +33,7 @@ export function useLiveSearch(query: string) {
         const tooMany =
           error instanceof FunctionsHttpError && error.context.status === 429;
         setResult({
-          q: debounced,
+          key,
           books: [],
           error: tooMany
             ? "Too many searches. Wait a minute and try again."
@@ -40,16 +43,16 @@ export function useLiveSearch(query: string) {
       }
 
       const rows = (data?.books ?? []) as BookRow[];
-      setResult({ q: debounced, books: rows.map(toBook), error: "" });
+      setResult({ key, books: rows.map(toBook), error: "" });
     })();
 
     return () => {
       alive = false;
     };
-  }, [debounced]);
+  }, [debounced, filter]);
 
   const active = term.length >= 2;
-  const settled = active && term === debounced && result.q === debounced;
+  const settled = active && term === debounced && result.key === `${debounced}|${filter}`;
 
   return {
     active,

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Bookmark, ExternalLink, Heart } from "lucide-react";
+import { ArrowLeft, Bookmark, BookOpen, ExternalLink, Heart } from "lucide-react";
 import { supabase } from "../../services/supabase/client";
 import Cover from "./Cover";
 import {
@@ -105,6 +105,18 @@ export default function BookPage({
             {row.published_year ? ` · First published ${row.published_year}` : ""}
           </p>
 
+          <p className={`access-note ${book.readable ? "access-note-free" : ""}`}>
+            {book.readable
+              ? "Free to read: open access"
+              : book.access === "public"
+                ? "Free online on Open Library"
+                : book.access === "borrowable"
+                  ? "Can be borrowed on Open Library"
+                  : book.access === "restricted"
+                    ? "Restricted access on Open Library"
+                    : "Check Open Library for availability"}
+          </p>
+
           {row.description && <p className="book-detail-description">{row.description}</p>}
 
           {!!row.subjects?.length && (
@@ -116,6 +128,12 @@ export default function BookPage({
           )}
 
           <div className="book-detail-actions">
+            {book.readable && (
+              <Link className="button-primary" to={`/read/${row.id}`}>
+                <BookOpen size={15} /> Read in LIBRIS
+              </Link>
+            )}
+
             {saved && status ? (
               <label className="book-status-field">
                 Reading status
@@ -141,7 +159,7 @@ export default function BookPage({
             </button>
 
             <a
-              className="button-primary"
+              className={book.readable ? "button-secondary" : "button-primary"}
               href={openLibraryUrl}
               target="_blank"
               rel="noopener noreferrer"

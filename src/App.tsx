@@ -7,10 +7,11 @@ import UpdatePasswordPage from "./features/auth/UpdatePasswordPage";
 import ProtectedRoute from './features/auth/ProtectedRoute'
 import { useSavedBooks } from './features/library/useSavedBooks'
 import { useSampleBooks } from './features/library/useCatalogue'
-import { useLiveSearch } from './features/library/useLiveSearch'
+import { useLiveSearch, type AccessFilter } from './features/library/useLiveSearch'
 import BookPage from './features/library/BookPage'
 import Cover from './features/library/Cover'
 import { STATUSES, STATUS_LABELS, type Book, type Status } from './features/library/books'
+import ReaderPage from './features/library/ReaderPage'
 import {
   ArrowDownRight,
   ArrowRight,
@@ -111,12 +112,21 @@ function BookCard({ book, saved, onToggleSave, status, onStatusChange, compact =
   onStatusChange?: (status: Status) => void
   compact?: boolean
 }) {
+  const badge = book.readable
+    ? { label: 'Read free', className: '' }
+    : book.access === 'public'
+      ? { label: 'Free online', className: '' }
+      : book.access === 'borrowable'
+        ? { label: 'Borrow', className: 'access-badge-borrow' }
+        : null
+
   return (
     <article className={`book-card ${compact ? 'book-card-compact' : ''}`}>
       <div className={`book-cover-wrap cover-${book.tone}`}>
         <Link to={`/book/${book.id}`} className="book-link" aria-label={`View ${book.title}`}>
           <Cover src={book.cover} title={book.title} />
         </Link>
+        {badge && <span className={`access-badge ${badge.className}`}>{badge.label}</span>}
         <button className={`save-book ${saved ? 'save-book-active' : ''}`} type="button" onClick={() => onToggleSave(book)} aria-label={saved ? `Remove ${book.title} from saved books` : `Save ${book.title}`} title={saved ? 'Saved to your shelf' : 'Save to your shelf'}>
           {saved ? <Heart size={17} fill="currentColor" /> : <Bookmark size={17} />}
         </button>
@@ -214,8 +224,14 @@ function ArrowUpRightIcon() { return <ArrowRight className="tile-arrow" size={19
 function DiscoverPage({ books, loading, error, onRetry, savedIds, onToggleSave, search, setSearch }: { books: Book[]; loading: boolean; error: string; onRetry: () => void; savedIds: string[]; onToggleSave: (book: Book) => void; search: string; setSearch: (value: string) => void }) {
   const [genre, setGenre] = useState('All books')
   const [sort, setSort] = useState('Recommended')
-  const live = useLiveSearch(search)
+  const [access, setAccess] = useState<AccessFilter>('all')
+  const live = useLiveSearch(search, access)
   const genres = ['All books', 'Fiction', 'Literary fiction', 'Memoir', 'Design', 'Fantasy', 'Personal growth']
+  const accessOptions: { value: AccessFilter; label: string }[] = [
+    { value: 'all', label: 'All results' },
+    { value: 'free', label: 'Free to read' },
+    { value: 'borrow', label: 'Borrow online' },
+  ]
   const filteredBooks = useMemo(() => {
     const term = search.trim().toLowerCase()
     const result = books.filter((book) => {
@@ -237,6 +253,11 @@ function DiscoverPage({ books, loading, error, onRetry, savedIds, onToggleSave, 
 
       {live.active ? (
         <>
+          <div className="genre-filters library-filters" aria-label="Filter by how you can read it">
+            {accessOptions.map((option) => (
+              <button key={option.value} className={`genre-chip ${access === option.value ? 'genre-chip-active' : ''}`} type="button" onClick={() => setAccess(option.value)}>{option.label}</button>
+            ))}
+          </div>
           <div className="results-line">
             <span>{live.loading ? 'Searching…' : `${live.books.length} ${live.books.length === 1 ? 'book' : 'books'} found`}</span>
             <span>Results from Open Library</span>
@@ -248,7 +269,7 @@ function DiscoverPage({ books, loading, error, onRetry, savedIds, onToggleSave, 
           ) : live.books.length ? (
             <div className="book-grid discover-grid">{live.books.map((book) => <BookCard key={book.id} book={book} saved={savedIds.includes(book.id)} onToggleSave={onToggleSave} />)}</div>
           ) : (
-            <div className="empty-state"><Search size={25} /><h2>No matches found</h2><p>Try a different title, author, or topic.</p><button className="button-secondary" type="button" onClick={() => setSearch('')}>Clear search</button></div>
+            <div className="empty-state"><Search size={25} /><h2>No matches found</h2><p>Try a different title, author, or topic{access !== 'all' ? ', or switch to All results' : ''}.</p><button className="button-secondary" type="button" onClick={() => { setSearch(''); setAccess('all') }}>Clear search</button></div>
           )}
         </>
       ) : (
@@ -335,7 +356,8 @@ export default function App() {
   const navigate = useNavigate()
   const { user } = useAuth()
   const { books, loading: booksLoading, error: booksError, retry: retryBooks } = useSampleBooks()
-  const { savedBooks, savedIds, statuses, loading: shelfLoading, error: shelfError, toggle, setStatus } = useSavedBooks()
+  const { savedBooks, savedIds, statuses, loading: shelfLoading, error: shelfError, toggle, setStatus, startReading } = useSavedBooks()
+  const isReader = location.pathname.startsWith('/read/')
 
   const toggleSave = (book: Book) => {
     if (!user) {
@@ -349,19 +371,24 @@ export default function App() {
     void setStatus(bookId, status)
   }
 
+  const beginReading = (book: Book) => {
+    void startReading(book)
+  }
+
   const runSearch = () => {
     if (location.pathname !== '/discover') navigate('/discover')
   }
 
   return (
     <div className="app-shell">
-      <div className="announcement-bar"><span className="announcement-dot" /> A quieter corner of the internet, made for readers <span className="announcement-separator">·</span> <span className="announcement-end">Come as you are.</span></div>
-      <Header />
+      {!isReader && <div className="announcement-bar"><span className="announcement-dot" /> A quieter corner of the internet, made for readers <span className="announcement-separator">·</span> <span className="announcement-end">Come as you are.</span></div>}
+      {!isReader && <Header />}
       {shelfError && <p className="auth-error" role="alert">{shelfError}</p>}
       <Routes>
         <Route path="/" element={<HomePage books={books} savedIds={savedIds} onToggleSave={toggleSave} search={search} setSearch={setSearch} onSearch={runSearch} />} />
         <Route path="/discover" element={<DiscoverPage books={books} loading={booksLoading} error={booksError} onRetry={retryBooks} savedIds={savedIds} onToggleSave={toggleSave} search={search} setSearch={setSearch} />} />
         <Route path="/book/:id" element={<BookPage savedIds={savedIds} statuses={statuses} onToggleSave={toggleSave} onSetStatus={changeStatus} />} />
+        <Route path="/read/:id" element={<ReaderPage statuses={statuses} shelfLoading={shelfLoading} onStartReading={beginReading} onSetStatus={changeStatus} />} />
         <Route
           path="/library"
           element={
@@ -381,7 +408,7 @@ export default function App() {
         <Route path="/auth/callback" element={<AuthCallback />} />
         <Route path="/auth/update-password" element={<UpdatePasswordPage />} />
       </Routes>
-      <Footer />
+      {!isReader && <Footer />}
     </div>
   )
 }
