@@ -100,7 +100,7 @@ export default function BookPage({
           <p className="eyebrow">{book.genre.toUpperCase()}</p>
           <h1>{row.title}</h1>
           {row.subtitle && <p className="book-detail-subtitle">{row.subtitle}</p>}
-          <p className="book-detail-author">
+          <p className="book.author">
             {authors}
             {row.published_year ? ` · First published ${row.published_year}` : ""}
           </p>

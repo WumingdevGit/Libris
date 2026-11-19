@@ -58,12 +58,28 @@ function normaliseAccess(value: string | null | undefined): Access {
     : "none";
 }
 
+// Open Library often lists the same author under several spellings
+function formatAuthors(authors?: string[] | null): string {
+  if (!authors?.length) return "Unknown author";
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const name of authors) {
+    const key = name.toLowerCase().replace(/[^a-z]/g, "");
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    unique.push(name);
+  }
+  if (!unique.length) return "Unknown author";
+  const shown = unique.slice(0, 2).join(", ");
+  return unique.length > 2 ? `${shown} +${unique.length - 2} more` : shown;
+}
+
 export function toBook(row: BookRow): Book {
   const access = normaliseAccess(row.access);
   return {
     id: row.id,
     title: row.title,
-    author: row.authors?.length ? row.authors.join(", ") : "Unknown author",
+    author: formatAuthors(row.authors),
     genre: row.subjects?.[0] ?? "Book",
     note:
       row.description ??

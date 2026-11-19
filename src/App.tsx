@@ -8,10 +8,11 @@ import ProtectedRoute from './features/auth/ProtectedRoute'
 import { useSavedBooks } from './features/library/useSavedBooks'
 import { useSampleBooks } from './features/library/useCatalogue'
 import { useLiveSearch, type AccessFilter } from './features/library/useLiveSearch'
+import { useFreeBooks, FREE_TOPICS } from './features/library/useFreeBooks'
 import BookPage from './features/library/BookPage'
+import ReaderPage from './features/library/ReaderPage'
 import Cover from './features/library/Cover'
 import { STATUSES, STATUS_LABELS, type Book, type Status } from './features/library/books'
-import ReaderPage from './features/library/ReaderPage'
 import {
   ArrowDownRight,
   ArrowRight,
@@ -104,12 +105,13 @@ function SectionHeading({ eyebrow, title, action }: { eyebrow?: string; title: s
   )
 }
 
-function BookCard({ book, saved, onToggleSave, status, onStatusChange, compact = false }: {
+function BookCard({ book, saved, onToggleSave, status, onStatusChange, readLabel, compact = false }: {
   book: Book
   saved: boolean
   onToggleSave: (book: Book) => void
   status?: Status
   onStatusChange?: (status: Status) => void
+  readLabel?: string
   compact?: boolean
 }) {
   const badge = book.readable
@@ -136,6 +138,9 @@ function BookCard({ book, saved, onToggleSave, status, onStatusChange, compact =
         <h3><Link to={`/book/${book.id}`}>{book.title}</Link></h3>
         <p className="book-author">{book.author}</p>
         {!compact && book.note && <p className="book-note">{book.note}</p>}
+        {book.readable && readLabel && (
+          <Link className="read-link" to={`/read/${book.id}`}><BookOpen size={13} /> {readLabel}</Link>
+        )}
         {status && onStatusChange && (
           <select
             className="status-select"
@@ -161,8 +166,8 @@ function SearchBox({ value, onChange, onSubmit }: { value: string; onChange: (va
   )
 }
 
-function HomePage({ books, savedIds, onToggleSave, search, setSearch, onSearch }: {
-  books: Book[]; savedIds: string[]; onToggleSave: (book: Book) => void; search: string; setSearch: (value: string) => void; onSearch: () => void
+function HomePage({ books, reading, savedIds, onToggleSave, search, setSearch, onSearch }: {
+  books: Book[]; reading: Book[]; savedIds: string[]; onToggleSave: (book: Book) => void; search: string; setSearch: (value: string) => void; onSearch: () => void
 }) {
   const picks = books.slice(0, 4)
   return (
@@ -192,6 +197,17 @@ function HomePage({ books, savedIds, onToggleSave, search, setSearch, onSearch }
           <Link to="/discover?mood=thought-provoking">A mind-bender <ArrowDownRight size={14} /></Link>
           <Link to="/discover?mood=escapist">Somewhere else entirely <ArrowDownRight size={14} /></Link>
         </section>
+
+        {reading.length > 0 && (
+          <section className="section-block page-gutter">
+            <SectionHeading eyebrow="PICK UP WHERE YOU LEFT OFF" title="Continue reading" action={{ label: 'My library', to: '/library' }} />
+            <div className="book-grid book-grid-featured">
+              {reading.slice(0, 4).map((book) => (
+                <BookCard key={book.id} book={book} saved onToggleSave={onToggleSave} readLabel="Continue reading" />
+              ))}
+            </div>
+          </section>
+        )}
 
         <section className="section-block page-gutter">
           <SectionHeading eyebrow="A FEW PLACES TO BEGIN" title="Books worth getting lost in" action={{ label: 'Explore the shelves', to: '/discover' }} />
@@ -225,7 +241,10 @@ function DiscoverPage({ books, loading, error, onRetry, savedIds, onToggleSave, 
   const [genre, setGenre] = useState('All books')
   const [sort, setSort] = useState('Recommended')
   const [access, setAccess] = useState<AccessFilter>('all')
+  const [view, setView] = useState<'featured' | 'free'>('featured')
+  const [topic, setTopic] = useState<string>('classics')
   const live = useLiveSearch(search, access)
+  const free = useFreeBooks(!live.active && view === 'free' ? topic : null)
   const genres = ['All books', 'Fiction', 'Literary fiction', 'Memoir', 'Design', 'Fantasy', 'Personal growth']
   const accessOptions: { value: AccessFilter; label: string }[] = [
     { value: 'all', label: 'All results' },
@@ -247,7 +266,7 @@ function DiscoverPage({ books, loading, error, onRetry, savedIds, onToggleSave, 
       <div className="page-intro">
         <p className="eyebrow">THE OPEN SHELF</p>
         <h1>Follow a <em>feeling.</em></h1>
-        <p>Search by title, author, or topic. As you type, LIBRIS searches the Open Library catalogue. Clear the box to browse the featured shelf.</p>
+        <p>Search by title, author, or topic. As you type, LIBRIS searches the Open Library catalogue. Clear the box to browse the featured shelf or free-to-read books.</p>
       </div>
       <SearchBox value={search} onChange={setSearch} onSubmit={() => undefined} />
 
@@ -274,22 +293,52 @@ function DiscoverPage({ books, loading, error, onRetry, savedIds, onToggleSave, 
         </>
       ) : (
         <>
-          <div className="discover-toolbar">
-            <div className="filter-label"><SlidersHorizontal size={16} /> Browse by</div>
-            <div className="genre-filters" aria-label="Filter by genre">
-              {genres.map((item) => <button key={item} className={`genre-chip ${genre === item ? 'genre-chip-active' : ''}`} type="button" onClick={() => setGenre(item)}>{item}</button>)}
-            </div>
-            <label className="sort-control">Sort <ChevronDown size={14} /><select value={sort} onChange={(event) => setSort(event.target.value)} aria-label="Sort books"><option>Recommended</option><option>Title A–Z</option></select></label>
+          <div className="genre-filters library-filters" aria-label="Choose a shelf">
+            <button className={`genre-chip ${view === 'featured' ? 'genre-chip-active' : ''}`} type="button" onClick={() => setView('featured')}>Featured shelf</button>
+            <button className={`genre-chip ${view === 'free' ? 'genre-chip-active' : ''}`} type="button" onClick={() => setView('free')}>Free to read</button>
           </div>
-          <div className="results-line"><span>{filteredBooks.length} {filteredBooks.length === 1 ? 'book' : 'books'} to explore</span><span>Featured shelf</span></div>
-          {loading ? (
-            <p>Loading the shelf…</p>
-          ) : error ? (
-            <div className="empty-state"><Search size={25} /><h2>Couldn't load the featured books</h2><p>Check your connection and try again.</p><button className="button-secondary" type="button" onClick={onRetry}>Try again</button></div>
-          ) : filteredBooks.length ? (
-            <div className="book-grid discover-grid">{filteredBooks.map((book) => <BookCard key={book.id} book={book} saved={savedIds.includes(book.id)} onToggleSave={onToggleSave} />)}</div>
+
+          {view === 'featured' ? (
+            <>
+              <div className="discover-toolbar">
+                <div className="filter-label"><SlidersHorizontal size={16} /> Browse by</div>
+                <div className="genre-filters" aria-label="Filter by genre">
+                  {genres.map((item) => <button key={item} className={`genre-chip ${genre === item ? 'genre-chip-active' : ''}`} type="button" onClick={() => setGenre(item)}>{item}</button>)}
+                </div>
+                <label className="sort-control">Sort <ChevronDown size={14} /><select value={sort} onChange={(event) => setSort(event.target.value)} aria-label="Sort books"><option>Recommended</option><option>Title A–Z</option></select></label>
+              </div>
+              <div className="results-line"><span>{filteredBooks.length} {filteredBooks.length === 1 ? 'book' : 'books'} to explore</span><span>Featured shelf</span></div>
+              {loading ? (
+                <p>Loading the shelf…</p>
+              ) : error ? (
+                <div className="empty-state"><Search size={25} /><h2>Couldn't load the featured books</h2><p>Check your connection and try again.</p><button className="button-secondary" type="button" onClick={onRetry}>Try again</button></div>
+              ) : filteredBooks.length ? (
+                <div className="book-grid discover-grid">{filteredBooks.map((book) => <BookCard key={book.id} book={book} saved={savedIds.includes(book.id)} onToggleSave={onToggleSave} />)}</div>
+              ) : (
+                <div className="empty-state"><Search size={25} /><h2>No matches on this shelf</h2><p>Try a different genre, or search the full catalogue above.</p><button className="button-secondary" type="button" onClick={() => { setSearch(''); setGenre('All books') }}>Clear search and filters</button></div>
+              )}
+            </>
           ) : (
-            <div className="empty-state"><Search size={25} /><h2>No matches on this shelf</h2><p>Try a different genre, or search the full catalogue above.</p><button className="button-secondary" type="button" onClick={() => { setSearch(''); setGenre('All books') }}>Clear search and filters</button></div>
+            <>
+              <div className="genre-filters library-filters" aria-label="Free books by subject">
+                {FREE_TOPICS.map((item) => (
+                  <button key={item.key} className={`genre-chip ${topic === item.key ? 'genre-chip-active' : ''}`} type="button" onClick={() => setTopic(item.key)}>{item.label}</button>
+                ))}
+              </div>
+              <div className="results-line">
+                <span>{free.loading ? 'Loading…' : `${free.books.length} free ${free.books.length === 1 ? 'book' : 'books'}`}</span>
+                <span>Open access · from Open Library</span>
+              </div>
+              {free.error ? (
+                <p className="auth-error" role="alert">{free.error}</p>
+              ) : free.loading ? (
+                <p>Finding free books…</p>
+              ) : free.books.length ? (
+                <div className="book-grid discover-grid">{free.books.map((book) => <BookCard key={book.id} book={book} saved={savedIds.includes(book.id)} onToggleSave={onToggleSave} readLabel="Read" />)}</div>
+              ) : (
+                <div className="empty-state"><BookOpen size={25} /><h2>Nothing to show here yet</h2><p>Try another subject.</p></div>
+              )}
+            </>
           )}
         </>
       )}
@@ -328,6 +377,7 @@ function LibraryPage({ savedBooks, statuses, onToggleSave, onSetStatus }: {
                   onToggleSave={onToggleSave}
                   status={statuses[book.id] ?? 'want_to_read'}
                   onStatusChange={(next) => onSetStatus(book.id, next)}
+                  readLabel={statuses[book.id] === 'currently_reading' ? 'Continue reading' : 'Read'}
                 />
               ))}
             </div>
@@ -358,6 +408,7 @@ export default function App() {
   const { books, loading: booksLoading, error: booksError, retry: retryBooks } = useSampleBooks()
   const { savedBooks, savedIds, statuses, loading: shelfLoading, error: shelfError, toggle, setStatus, startReading } = useSavedBooks()
   const isReader = location.pathname.startsWith('/read/')
+  const reading = savedBooks.filter((book) => statuses[book.id] === 'currently_reading')
 
   const toggleSave = (book: Book) => {
     if (!user) {
@@ -385,7 +436,7 @@ export default function App() {
       {!isReader && <Header />}
       {shelfError && <p className="auth-error" role="alert">{shelfError}</p>}
       <Routes>
-        <Route path="/" element={<HomePage books={books} savedIds={savedIds} onToggleSave={toggleSave} search={search} setSearch={setSearch} onSearch={runSearch} />} />
+        <Route path="/" element={<HomePage books={books} reading={reading} savedIds={savedIds} onToggleSave={toggleSave} search={search} setSearch={setSearch} onSearch={runSearch} />} />
         <Route path="/discover" element={<DiscoverPage books={books} loading={booksLoading} error={booksError} onRetry={retryBooks} savedIds={savedIds} onToggleSave={toggleSave} search={search} setSearch={setSearch} />} />
         <Route path="/book/:id" element={<BookPage savedIds={savedIds} statuses={statuses} onToggleSave={toggleSave} onSetStatus={changeStatus} />} />
         <Route path="/read/:id" element={<ReaderPage statuses={statuses} shelfLoading={shelfLoading} onStartReading={beginReading} onSetStatus={changeStatus} />} />
