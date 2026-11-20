@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { ArrowLeft, Check, ExternalLink, Maximize2, Minimize2 } from "lucide-react";
 import { useAuth } from "../auth/AuthContext";
 import { supabase } from "../../services/supabase/client";
+import TextReader from "./TextReader";
 import {
   BOOK_COLUMNS,
   STATUSES,
@@ -12,6 +13,8 @@ import {
   type BookRow,
   type Status,
 } from "./books";
+
+type Row = BookRow & { provider_book_id?: string | null };
 
 type Props = {
   statuses: Record<string, Status>;
@@ -31,7 +34,7 @@ export default function ReaderPage({
 }: Props) {
   const { id } = useParams();
   const { user } = useAuth();
-  const [result, setResult] = useState<{ id: string; row: BookRow | null } | null>(null);
+  const [result, setResult] = useState<{ id: string; row: Row | null } | null>(null);
   const [isFull, setIsFull] = useState(false);
   const shellRef = useRef<HTMLDivElement>(null);
   const startedFor = useRef<string | null>(null);
@@ -43,11 +46,11 @@ export default function ReaderPage({
     (async () => {
       const { data, error } = await supabase
         .from("books")
-        .select(BOOK_COLUMNS)
+        .select(`${BOOK_COLUMNS}, provider_book_id`)
         .eq("id", id)
         .maybeSingle();
       if (!alive) return;
-      setResult({ id, row: error ? null : ((data as BookRow | null) ?? null) });
+      setResult({ id, row: error ? null : ((data as Row | null) ?? null) });
     })();
 
     return () => {
@@ -65,7 +68,8 @@ export default function ReaderPage({
   const row = loading ? null : (result?.row ?? null);
   const book = row ? toBook(row) : null;
   const iaId = row?.ia_id && SAFE_ID.test(row.ia_id) ? row.ia_id : null;
-  const canRead = !!book && book.access === "public" && !!iaId;
+  const isText = book?.reader === "text";
+  const canRead = !!book && (isText || (book.reader === "archive" && !!iaId));
 
   // Opening the reader counts as starting to read (signed-in users only)
   useEffect(() => {
@@ -88,7 +92,7 @@ export default function ReaderPage({
     );
   }
 
-  if (!book || !canRead || !iaId) {
+  if (!book || !canRead) {
     return (
       <main className="page-gutter book-page">
         <Link className="book-back" to={book ? `/book/${book.id}` : "/discover"}>
@@ -97,7 +101,7 @@ export default function ReaderPage({
         <h1>This book can't be opened in the LIBRIS reader</h1>
         <p>
           Only books that are openly available can be read here. You can check
-          whether it can be read or borrowed on Open Library instead.
+          the book's page for other ways to read or borrow it.
         </p>
         {book && (
           <p>
@@ -109,6 +113,9 @@ export default function ReaderPage({
   }
 
   const status = statuses[book.id];
+  const sourceUrl = isText
+    ? `https://www.gutenberg.org/ebooks/${row?.provider_book_id ?? ""}`
+    : `https://archive.org/details/${iaId}`;
 
   return (
     <div className="reader-shell" ref={shellRef}>
@@ -144,28 +151,36 @@ export default function ReaderPage({
             {isFull ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
             {isFull ? " Exit fullscreen" : " Fullscreen"}
           </button>
-          <a
-            className="reader-btn"
-            href={`https://archive.org/details/${iaId}`}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Internet Archive <ExternalLink size={13} />
+          <a className="reader-btn" href={sourceUrl} target="_blank" rel="noopener noreferrer">
+            {isText ? "Project Gutenberg" : "Internet Archive"} <ExternalLink size={13} />
           </a>
         </div>
       </div>
 
-      <iframe
-        className="reader-frame"
-        title={`Reading ${book.title}`}
-        src={`https://archive.org/embed/${iaId}`}
-        allow="fullscreen"
-        allowFullScreen
-        sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-forms"
-      />
+      {isText ? (
+        <TextReader key={book.id} book={book} status={status} onSetStatus={onSetStatus} />
+      ) : (
+        <div className="reader-stage">
+          <p className="reader-loading">
+            Loading the book… If nothing appears,{" "}
+            <a href={sourceUrl} target="_blank" rel="noopener noreferrer">
+              open it on the Internet Archive
+            </a>.
+          </p>
+          <iframe
+            className="reader-frame"
+            title={`Reading ${book.title}`}
+            src={`https://archive.org/embed/${iaId}`}
+            allow="fullscreen"
+            allowFullScreen
+          />
+        </div>
+      )}
 
       <p className="reader-note">
-        Book viewer provided by the Internet Archive.{" "}
+        {isText
+          ? "Text from Project Gutenberg, a library of public-domain books. "
+          : "Book viewer provided by the Internet Archive. "}
         {!user && (
           <Link to="/auth" state={{ from: `/read/${book.id}` }}>
             Sign in to track your reading.

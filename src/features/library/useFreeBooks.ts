@@ -1,18 +1,24 @@
 import { useEffect, useState } from "react";
-import { FunctionsHttpError } from "@supabase/supabase-js";
 import { supabase } from "../../services/supabase/client";
-import { toBook, type Book, type BookRow } from "./books";
+import { BOOK_COLUMNS, toBook, type Book, type BookRow } from "./books";
 
 export const FREE_TOPICS = [
   { key: "classics", label: "Classics" },
-  { key: "mystery", label: "Mystery" },
-  { key: "scifi", label: "Science fiction" },
   { key: "romance", label: "Romance" },
-  { key: "poetry", label: "Poetry" },
-  { key: "philosophy", label: "Philosophy" },
-  { key: "history", label: "History" },
+  { key: "fantasy", label: "Fantasy" },
+  { key: "scifi", label: "Science fiction" },
+  { key: "horror", label: "Horror" },
   { key: "adventure", label: "Adventure" },
 ] as const;
+
+const SUBJECT_BY_TOPIC: Record<string, string> = {
+  classics: "Classics",
+  romance: "Romance",
+  fantasy: "Fantasy",
+  scifi: "Science fiction",
+  horror: "Horror",
+  adventure: "Adventure",
+};
 
 type Result = { topic: string; books: Book[]; error: string };
 
@@ -24,25 +30,29 @@ export function useFreeBooks(topic: string | null) {
     let alive = true;
 
     (async () => {
-      const { data, error } = await supabase.functions.invoke("search-books", {
-        body: { browse: topic },
-      });
+      let query = supabase
+        .from("books")
+        .select(BOOK_COLUMNS)
+        .eq("provider", "gutenberg")
+        .order("title");
+
+      const subject = SUBJECT_BY_TOPIC[topic];
+      if (subject) query = query.contains("subjects", [subject]);
+
+      const { data, error } = await query;
       if (!alive) return;
 
       if (error) {
-        const tooMany =
-          error instanceof FunctionsHttpError && error.context.status === 429;
+        console.error("Free books load failed:", error);
         setResult({
           topic,
           books: [],
-          error: tooMany
-            ? "Too many requests. Wait a minute and try again."
-            : "Couldn't load free books right now. Please try again shortly.",
+          error: "Couldn't load free books right now. Please try again shortly.",
         });
         return;
       }
 
-      const rows = (data?.books ?? []) as BookRow[];
+      const rows = (data ?? []) as BookRow[];
       setResult({ topic, books: rows.map(toBook), error: "" });
     })();
 

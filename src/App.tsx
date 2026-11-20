@@ -13,6 +13,9 @@ import BookPage from './features/library/BookPage'
 import ReaderPage from './features/library/ReaderPage'
 import Cover from './features/library/Cover'
 import { STATUSES, STATUS_LABELS, type Book, type Status } from './features/library/books'
+import AccountMenu from './features/account/AccountMenu'
+import AccountPage from './features/account/AccountPage'
+import Select from './components/Select'
 import {
   ArrowDownRight,
   ArrowRight,
@@ -41,7 +44,7 @@ const navItems = [
 function Header() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const location = useLocation()
-  const { user, signOut } = useAuth()
+  const { user } = useAuth()
 
   return (
     <header className="site-header">
@@ -70,15 +73,7 @@ function Header() {
       <div className="header-actions">
         <Link to="/discover" className="header-search" aria-label="Search books"><Search size={18} /></Link>
         {user ? (
-          <button
-            className="avatar-button"
-            type="button"
-            onClick={() => void signOut()}
-            aria-label="Sign out"
-            title={`Signed in as ${user.email}. Click to sign out.`}
-          >
-            {(user.user_metadata?.full_name ?? user.email ?? '?').charAt(0).toUpperCase()}
-          </button>
+          <AccountMenu />
         ) : (
           <Link to="/auth" className="avatar-button" aria-label="Sign in" title="Sign in">
             <User size={18} />
@@ -142,14 +137,13 @@ function BookCard({ book, saved, onToggleSave, status, onStatusChange, readLabel
           <Link className="read-link" to={`/read/${book.id}`}><BookOpen size={13} /> {readLabel}</Link>
         )}
         {status && onStatusChange && (
-          <select
-            className="status-select"
+          <Select
+            className="ui-select-block"
+            label={`Reading status for ${book.title}`}
             value={status}
-            onChange={(event) => onStatusChange(event.target.value as Status)}
-            aria-label={`Reading status for ${book.title}`}
-          >
-            {STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABELS[s]}</option>)}
-          </select>
+            options={STATUSES.map((s) => ({ value: s, label: STATUS_LABELS[s] }))}
+            onChange={onStatusChange}
+          />
         )}
       </div>
     </article>
@@ -449,6 +443,14 @@ export default function App() {
               ) : (
                 <LibraryPage savedBooks={savedBooks} statuses={statuses} onToggleSave={toggleSave} onSetStatus={changeStatus} />
               )}
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/account"
+          element={
+            <ProtectedRoute>
+              <AccountPage statuses={statuses} />
             </ProtectedRoute>
           }
         />

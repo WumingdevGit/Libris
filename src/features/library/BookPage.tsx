@@ -14,8 +14,7 @@ import {
 } from "./books";
 
 type Detail = BookRow & {
-  provider: string | null;
-  provider_book_id: string | null;
+   provider_book_id: string | null 
 };
 
 type Props = {
@@ -41,7 +40,7 @@ export default function BookPage({
     (async () => {
       const { data, error } = await supabase
         .from("books")
-        .select(`${BOOK_COLUMNS}, provider, provider_book_id`)
+        .select(`${BOOK_COLUMNS}, provider_book_id`)
         .eq("id", id)
         .maybeSingle();
       if (!alive) return;
@@ -84,6 +83,10 @@ export default function BookPage({
     row.provider === "openlibrary" && row.provider_book_id
       ? `https://openlibrary.org/works/${row.provider_book_id}`
       : `https://openlibrary.org/search?q=${encodeURIComponent(`${row.title} ${authors}`)}`;
+  const isGutenberg = row.provider === "gutenberg" && !!row.provider_book_id;
+  const sourceUrl = isGutenberg
+    ? `https://www.gutenberg.org/ebooks/${row.provider_book_id}`
+    : openLibraryUrl;
 
   return (
     <main className="page-gutter book-page">
@@ -160,11 +163,11 @@ export default function BookPage({
 
             <a
               className={book.readable ? "button-secondary" : "button-primary"}
-              href={openLibraryUrl}
+              href={sourceUrl}
               target="_blank"
               rel="noopener noreferrer"
             >
-              View on Open Library <ExternalLink size={15} />
+              {isGutenberg ? "View on Project Gutenberg" : "View on Open Library"} <ExternalLink size={15} />
             </a>
           </div>
 

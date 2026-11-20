@@ -15,6 +15,7 @@ export const STATUS_LABELS: Record<Status, string> = {
 };
 
 export type Access = "public" | "borrowable" | "restricted" | "none";
+export type ReaderKind = "archive" | "text" | null;
 
 export type Book = {
   id: string; // books.id (uuid)
@@ -25,12 +26,14 @@ export type Book = {
   cover: string;
   tone: string;
   access: Access;
+  reader: ReaderKind; // which reader can open it
   readable: boolean; // free to read inside LIBRIS
 };
 
 export type BookRow = {
   id: string;
   title: string;
+  provider?: string | null;
   subtitle?: string | null;
   description?: string | null;
   cover_url?: string | null;
@@ -42,7 +45,7 @@ export type BookRow = {
 };
 
 export const BOOK_COLUMNS =
-  "id, title, subtitle, description, cover_url, published_year, authors, subjects, access, ia_id";
+  "id, title, provider, subtitle, description, cover_url, published_year, authors, subjects, access, ia_id";
 
 const TONES = ["olive", "rust", "blue", "gold", "plum", "sand"];
 
@@ -58,7 +61,7 @@ function normaliseAccess(value: string | null | undefined): Access {
     : "none";
 }
 
-// Open Library often lists the same author under several spellings
+// Sources often list the same author under several spellings
 function formatAuthors(authors?: string[] | null): string {
   if (!authors?.length) return "Unknown author";
   const seen = new Set<string>();
@@ -76,6 +79,15 @@ function formatAuthors(authors?: string[] | null): string {
 
 export function toBook(row: BookRow): Book {
   const access = normaliseAccess(row.access);
+  const reader: ReaderKind =
+    access !== "public"
+      ? null
+      : row.provider === "gutenberg"
+        ? "text"
+        : row.ia_id
+          ? "archive"
+          : null;
+
   return {
     id: row.id,
     title: row.title,
@@ -87,6 +99,7 @@ export function toBook(row: BookRow): Book {
     cover: row.cover_url ?? "",
     tone: toneFor(row.id),
     access,
-    readable: access === "public" && !!row.ia_id,
+    reader,
+    readable: reader !== null,
   };
 }
