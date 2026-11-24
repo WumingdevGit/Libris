@@ -1,8 +1,16 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import { ChevronLeft, ChevronRight, Type } from "lucide-react";
 import { supabase } from "../../services/supabase/client";
 import { useAuth } from "../auth/AuthContext";
 import Select from "../../components/Select";
+import { useReadingProgress } from "./useReadingProgress";
 import type { Book, Status } from "./books";
 
 type TextBook = {
@@ -61,9 +69,12 @@ type Props = {
 
 export default function TextReader({ book, status, onSetStatus }: Props) {
   const { user } = useAuth();
+  const progress = useReadingProgress(book.id, user?.id ?? null, !!status);
   const [prefs, setPrefs] = useState<Prefs>(loadPrefs);
   const [panel, setPanel] = useState(false);
-  const [chapterIndex, setChapterIndex] = useState(0);
+  const [chapterPick, setChapterPick] = useState<number | null>(null);
+  const [percent, setPercent] = useState(0);
+  const [resumed, setResumed] = useState(false);
   const [fetched, setFetched] = useState<{
     id: string;
     data: TextBook | null;
@@ -71,6 +82,8 @@ export default function TextReader({ book, status, onSetStatus }: Props) {
   } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const aaRef = useRef<HTMLDivElement>(null);
+  const restored = useRef(false);
+  const ticking = useRef(false);
 
   const cached = textCache.get(book.id) ?? null;
   const data = cached ?? (fetched?.id === book.id ? fetched.data : null);
@@ -103,6 +116,57 @@ export default function TextReader({ book, status, onSetStatus }: Props) {
     };
   }, [book.id]);
 
+  // Character count before each chapter, used to work out the percentage
+  const stats = useMemo(() => {
+    if (!data) return null;
+    let total = 0;
+    const starts = data.chapters.map((chapter) => {
+      const start = total;
+      total += chapter.paragraphs.reduce((n, p) => n + p.length, 0);
+      return start;
+    });
+    return { starts, total: Math.max(total, 1) };
+  }, [data]);
+
+  const percentAt = useCallback(
+    (c: number, p: number) => {
+      if (!data || !stats) return 0;
+      const chapter = data.chapters[c];
+      if (!chapter) return 0;
+      let before = 0;
+      for (let i = 0; i < p && i < chapter.paragraphs.length; i++) {
+        before += chapter.paragraphs[i].length;
+      }
+      return ((stats.starts[c] + before) / stats.total) * 100;
+    },
+    [data, stats],
+  );
+
+  const lastChapter = data ? data.chapters.length - 1 : 0;
+  const chapterIndex = Math.min(
+    lastChapter,
+    Math.max(0, chapterPick ?? progress.locator?.c ?? 0),
+  );
+
+  // Return to the saved spot once the text and the saved position are both ready
+  useEffect(() => {
+    if (restored.current || !data || !progress.loaded) return;
+    restored.current = true;
+    const loc = progress.locator;
+    if (!loc || (loc.c === 0 && loc.p === 0)) return;
+
+    window.requestAnimationFrame(() => {
+      if (loc.p > 0) {
+        scrollRef.current
+          ?.querySelector(`[data-p="${loc.p}"]`)
+          ?.scrollIntoView({ block: "start" });
+      }
+      setPercent(Math.round(percentAt(loc.c, loc.p)));
+      setResumed(true);
+      window.setTimeout(() => setResumed(false), 4000);
+    });
+  }, [data, progress.loaded, progress.locator, percentAt]);
+
   // Close the settings panel when clicking elsewhere or pressing Escape
   useEffect(() => {
     if (!panel) return;
@@ -129,6 +193,40 @@ export default function TextReader({ book, status, onSetStatus }: Props) {
     }
   }
 
+  function reportPosition(paragraph: number) {
+    const pct = percentAt(chapterIndex, paragraph);
+    setPercent(Math.round(pct));
+    if (user) progress.save({ c: chapterIndex, p: paragraph }, pct);
+  }
+
+  function handleScroll() {
+    if (ticking.current || !data) return;
+    ticking.current = true;
+    window.requestAnimationFrame(() => {
+      ticking.current = false;
+      const root = scrollRef.current;
+      if (!root) return;
+      const top = root.getBoundingClientRect().top + 24;
+      let found = 0;
+      for (const node of root.querySelectorAll<HTMLElement>("[data-p]")) {
+        if (node.getBoundingClientRect().bottom > top) {
+          found = Number(node.dataset.p);
+          break;
+        }
+      }
+      reportPosition(found);
+    });
+  }
+
+  function goToChapter(next: number) {
+    const target = Math.min(lastChapter, Math.max(0, next));
+    const pct = percentAt(target, 0);
+    setChapterPick(target);
+    setPercent(Math.round(pct));
+    scrollRef.current?.scrollTo({ top: 0 });
+    if (user) progress.save({ c: target, p: 0 }, pct);
+  }
+
   if (loadError) {
     return (
       <div className="text-reader-message">
@@ -138,18 +236,11 @@ export default function TextReader({ book, status, onSetStatus }: Props) {
     );
   }
 
-  if (!data) {
+  if (!data || !progress.loaded) {
     return <div className="text-reader-message"><p>Opening the book…</p></div>;
   }
 
-  const lastChapter = data.chapters.length - 1;
-  const index = Math.min(chapterIndex, lastChapter);
-  const chapter = data.chapters[index];
-
-  function goToChapter(next: number) {
-    setChapterIndex(Math.min(lastChapter, Math.max(0, next)));
-    scrollRef.current?.scrollTo({ top: 0 });
-  }
+  const chapter = data.chapters[chapterIndex];
 
   return (
     <div
@@ -161,7 +252,7 @@ export default function TextReader({ book, status, onSetStatus }: Props) {
       <div className="text-toolbar">
         <Select
           label="Chapters"
-          value={index}
+          value={chapterIndex}
           options={data.chapters.map((c, i) => ({
             value: i,
             label: c.title.length > 60 ? `${c.title.slice(0, 57)}…` : c.title,
@@ -170,7 +261,7 @@ export default function TextReader({ book, status, onSetStatus }: Props) {
         />
 
         <span className="tr-progress">
-          Section {index + 1} of {data.chapters.length}
+          Section {chapterIndex + 1} of {data.chapters.length} · {percent}%
         </span>
 
         <div className="tr-aa" ref={aaRef}>
@@ -229,12 +320,13 @@ export default function TextReader({ book, status, onSetStatus }: Props) {
         </div>
       </div>
 
-      <div className="text-scroll" ref={scrollRef}>
+      <div className="text-scroll" ref={scrollRef} onScroll={handleScroll}>
         <article className="text-page">
           <h2 className="tr-chapter-title">{chapter.title}</h2>
           {chapter.paragraphs.map((p, i) => (
             <p
-              key={`${index}-${i}`}
+              key={`${chapterIndex}-${i}`}
+              data-p={i}
               className={p.includes("\n") ? "tr-p tr-verse" : "tr-p"}
             >
               <Inline text={p} />
@@ -245,13 +337,13 @@ export default function TextReader({ book, status, onSetStatus }: Props) {
             <button
               type="button"
               className="reader-btn"
-              onClick={() => goToChapter(index - 1)}
-              disabled={index === 0}
+              onClick={() => goToChapter(chapterIndex - 1)}
+              disabled={chapterIndex === 0}
             >
               <ChevronLeft size={14} /> Previous
             </button>
-            {index < lastChapter ? (
-              <button type="button" className="reader-btn" onClick={() => goToChapter(index + 1)}>
+            {chapterIndex < lastChapter ? (
+              <button type="button" className="reader-btn" onClick={() => goToChapter(chapterIndex + 1)}>
                 Next <ChevronRight size={14} />
               </button>
             ) : user && status !== "finished" ? (
@@ -264,6 +356,8 @@ export default function TextReader({ book, status, onSetStatus }: Props) {
           </nav>
         </article>
       </div>
+
+      {resumed && <div className="tr-toast" role="status">Back where you left off</div>}
     </div>
   );
 }
